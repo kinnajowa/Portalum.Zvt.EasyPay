@@ -18,8 +18,7 @@ namespace Portalum.Zvt.EasyPay
 
         public MainWindow(
             ILoggerFactory loggerFactory,
-            PaymentTerminalConfig paymentTerminalConfig,
-            decimal amount)
+            PaymentTerminalConfig paymentTerminalConfig)
         {
             this._loggerFactory = loggerFactory;
             this._paymentTerminalConfig = paymentTerminalConfig;
@@ -27,11 +26,11 @@ namespace Portalum.Zvt.EasyPay
             this._logger = loggerFactory.CreateLogger<MainWindow>();
 
             this.InitializeComponent();
-            this.LabelAmount.Content = $"{amount:C2}";
+            this.LabelAmount.Content = $"{paymentTerminalConfig.Amount:C2}";
 
             this.UpdateStatus("Preparing...", StatusType.Information);
 
-            _ = Task.Run(async () => await this.StartPaymentAsync(amount));
+            _ = Task.Run(async () => await this.StartPaymentAsync(paymentTerminalConfig.Amount));
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -68,7 +67,7 @@ namespace Portalum.Zvt.EasyPay
             {
                 Encoding = ZvtEncoding.CodePage437,
                 Language = Zvt.Language.German,
-                Password = 000000
+                Password = _paymentTerminalConfig.Password
             };
 
             var deviceCommunicationLogger = this._loggerFactory.CreateLogger<TcpNetworkDeviceCommunication>();
