@@ -3,6 +3,7 @@ using Portalum.Zvt.EasyPay.Models;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace Portalum.Zvt.EasyPay
 {
@@ -27,10 +28,37 @@ namespace Portalum.Zvt.EasyPay
 
             this.InitializeComponent();
             this.LabelAmount.Content = $"{paymentTerminalConfig.Amount:C2}";
+            
+            switch (paymentTerminalConfig.TransactionType)
+            {
+                case TransactionType.Payment:
+                    this.LabelTransactionType.Content = "Payment";
+                    this.LabelTransactionDetails.Content = "Amount:";
+                    break;
+                case TransactionType.Reversal:
+                    this.LabelTransactionType.Content = "Reversal";
+                    this.LabelTransactionDetails.Content = $"Receipt no.: {paymentTerminalConfig.ReceiptNumber}";
+                    break;
+                default:
+                    break;
+            }
 
             this.UpdateStatus("Preparing...", StatusType.Information);
 
-            _ = Task.Run(async () => await this.StartPaymentAsync(paymentTerminalConfig.Amount));
+            var task = async () => { Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-5)); };
+
+            switch (paymentTerminalConfig.TransactionType)
+            {
+                case TransactionType.Payment:
+                    task = async () => await this.StartPaymentAsync(paymentTerminalConfig.Amount);
+                    break;
+                case TransactionType.Reversal:
+                    task = async () =>
+                        await this.StartReversalAsync(paymentTerminalConfig.ReceiptNumber);
+                    break;
+            }
+
+            _ = Task.Run(task);
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -57,6 +85,69 @@ namespace Portalum.Zvt.EasyPay
 
                 this.LabelStatus.Content = status;
             });
+        }
+
+        private async Task StartReversalAsync(int receiptNo)
+        {
+            this._logger.LogInformation($"{nameof(StartReversalAsync)} - Start");
+
+            var zvtClientConfig = new ZvtClientConfig
+            {
+                Encoding = ZvtEncoding.CodePage437,
+                Language = Zvt.Language.German,
+                Password = _paymentTerminalConfig.Password
+            };
+
+            var deviceCommunicationLogger = this._loggerFactory.CreateLogger<TcpNetworkDeviceCommunication>();
+            var zvtClientLogger = this._loggerFactory.CreateLogger<ZvtClient>();
+
+            using var deviceCommunication = new TcpNetworkDeviceCommunication(
+                this._paymentTerminalConfig.IpAddress,
+                port: this._paymentTerminalConfig.Port,
+                enableKeepAlive: false,
+                logger: deviceCommunicationLogger);
+
+            this.UpdateStatus("Connect to payment terminal...", StatusType.Information);
+
+            if (!await deviceCommunication.ConnectAsync())
+            {
+                this.UpdateStatus("Cannot connect to payment terminal", StatusType.Error);
+                await Task.Delay(3000);
+
+                this._logger.LogError($"{nameof(StartPaymentAsync)} - Cannot connect to {this._paymentTerminalConfig.IpAddress}:{this._paymentTerminalConfig.Port}");
+                Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-4); });
+                return;
+            }
+
+            var zvtClient = new ZvtClient(deviceCommunication, logger: zvtClientLogger, clientConfig: zvtClientConfig);
+            try
+            {
+                zvtClient.IntermediateStatusInformationReceived += this.IntermediateStatusInformationReceived;
+
+                var response = await zvtClient.ReversalAsync(receiptNo);
+                if (response.State == CommandResponseState.Successful)
+                {
+                    this._logger.LogInformation($"{nameof(StartReversalAsync)} - Successful");
+
+                    this.UpdateStatus("Reversal successful", StatusType.Information);
+                    await Task.Delay(1000);
+
+                    Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
+                    return;
+                }
+
+                this._logger.LogInformation($"{nameof(StartReversalAsync)} - Not successful");
+
+                this.UpdateStatus("Reversal not successful", StatusType.Error);
+                await Task.Delay(1000);
+
+                Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-1); });
+            }
+            finally
+            {
+                zvtClient.IntermediateStatusInformationReceived -= this.IntermediateStatusInformationReceived;
+                zvtClient.Dispose();
+            }
         }
 
         private async Task StartPaymentAsync(decimal amount)

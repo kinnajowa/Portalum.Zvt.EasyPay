@@ -7,6 +7,7 @@
         public int Password { get; set; }
         public TransactionType TransactionType { get; set; }
         public decimal Amount { get; set; }
+        public int ReceiptNumber { get; set; }
         public ConfigType ConfigType { get; set; }
         
     }

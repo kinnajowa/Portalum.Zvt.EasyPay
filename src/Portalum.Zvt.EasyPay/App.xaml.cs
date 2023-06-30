@@ -85,7 +85,9 @@ namespace Portalum.Zvt.EasyPay
                 terminalConfig.Port = (int) (regkey?.GetValue("Port") ?? 22000);
                 terminalConfig.Password = (int) (regkey?.GetValue("Passwort") ?? 0);
                 terminalConfig.Amount = ParseEurocentToDecimal((int) (regkey?.GetValue("Betrag") ?? 0));
-                terminalConfig.TransactionType = TransactionType.Payment;
+                terminalConfig.TransactionType = (TransactionType) (regkey?.GetValue("Funktion") ?? TransactionType.Payment);
+                if (terminalConfig.TransactionType == TransactionType.Reversal)
+                    terminalConfig.ReceiptNumber = (int) (regkey?.GetValue("StornoBelegNr") ?? 0);
                 terminalConfig.ConfigType = ConfigType.Registry;
             }
             else
