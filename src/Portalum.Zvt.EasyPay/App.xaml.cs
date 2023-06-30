@@ -39,9 +39,34 @@ namespace Portalum.Zvt.EasyPay
                 return;
             }
 
-            Parser.Default.ParseArguments<CommandLineOptions>(e.Args)
-                .WithParsed(this.RunOptions)
-                .WithNotParsed(this.HandleParseError);
+            var dataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EasyPay");
+            Directory.CreateDirectory(dataPath);
+            var licensePath = Path.Combine(dataPath, "license.xml");
+
+            if (File.Exists(licensePath))
+            {
+                if (CheckLicense(File.ReadAllText(licensePath)))
+                {
+                    Parser.Default.ParseArguments<CommandLineOptions>(e.Args)
+                        .WithParsed(this.RunOptions)
+                        .WithNotParsed(this.HandleParseError);
+                }
+                else
+                {
+                    this._logger.LogError($"{nameof(Application_Startup)} - License not valid. please refer to your vendor.");
+                    Current.Shutdown(-6);
+                }
+            }
+            else
+            {
+                var window = new LicenseWindow(this._loggerFactory);
+                window.Closed += (s, args) =>
+                {
+                    //todo
+                    Application_Startup(sender, e);
+                };
+                window.Show();
+            }
         }
 
         private void Application_Exit(object sender, ExitEventArgs e)
@@ -51,6 +76,7 @@ namespace Portalum.Zvt.EasyPay
                 .CreateSubKey("ZVT", true) ?? throw new InvalidOperationException();
             
             regkey.SetValue("Aktiv", 0);
+            regkey.SetValue("Ergebnis", e.ApplicationExitCode * -1);
             regkey.Dispose();
             
             this._loggerFactory.Dispose();
@@ -136,7 +162,7 @@ namespace Portalum.Zvt.EasyPay
         private void RunOptions(CommandLineOptions options)
         {
             var configuration = this.GetConfiguration(options);
-            this._logger.LogInformation($"{nameof(RunOptions)} - Startup successful, start payment process wiht an amount of {configuration.Amount}");
+            this._logger.LogInformation($"{nameof(RunOptions)} - Startup successful, start payment process with an amount of {configuration.Amount}");
 
             var window = new MainWindow(this._loggerFactory, configuration);
             window.Show();
@@ -145,6 +171,11 @@ namespace Portalum.Zvt.EasyPay
         private void HandleParseError(IEnumerable<Error> errors)
         {
             Current.Shutdown(-2);
+        }
+
+        private bool CheckLicense(string license)
+        {
+            return false;
         }
     }
 }
