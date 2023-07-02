@@ -47,6 +47,7 @@ namespace Portalum.Zvt.EasyPay
                 return;
             }
 
+            //check license
             var dataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EasyPay");
             Directory.CreateDirectory(dataPath);
             var licensePath = Path.Combine(dataPath, "license.lic");

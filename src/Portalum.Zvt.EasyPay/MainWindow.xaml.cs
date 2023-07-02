@@ -1,8 +1,10 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Threading;
+using Microsoft.Extensions.Logging;
 using Portalum.Zvt.EasyPay.Models;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace Portalum.Zvt.EasyPay
 {
@@ -17,7 +19,7 @@ namespace Portalum.Zvt.EasyPay
         private readonly ILogger<MainWindow> _logger;
         private TcpNetworkDeviceCommunication _deviceCommunication;
         private ZvtClient? _zvtClient;
-        
+        private readonly CancellationTokenSource _tokenSource;
 
         public MainWindow(
             ILoggerFactory loggerFactory,
@@ -29,8 +31,9 @@ namespace Portalum.Zvt.EasyPay
             this._logger = loggerFactory.CreateLogger<MainWindow>();
 
             this.InitializeComponent();
+            this.UpdateStatus("Preparing...", StatusType.Information);
             this.LabelAmount.Content = $"{paymentTerminalConfig.Amount:C2}";
-            
+
             switch (paymentTerminalConfig.TransactionType)
             {
                 case TransactionType.Payment:
@@ -45,7 +48,7 @@ namespace Portalum.Zvt.EasyPay
                     break;
             }
 
-            this.UpdateStatus("Preparing...", StatusType.Information);
+            _tokenSource = new CancellationTokenSource();
 
             _ = Task.Run(async () => await InitTransaction(paymentTerminalConfig));
 
@@ -71,7 +74,7 @@ namespace Portalum.Zvt.EasyPay
 
             this.UpdateStatus("Connect to payment terminal...", StatusType.Information);
 
-            if (!await _deviceCommunication.ConnectAsync())
+            if (!await _deviceCommunication.ConnectAsync(_tokenSource.Token))
             {
                 this.UpdateStatus("Cannot connect to payment terminal", StatusType.Error);
                 await Task.Delay(3000);
@@ -140,9 +143,11 @@ namespace Portalum.Zvt.EasyPay
             
             try
             {
-                var response = await _zvtClient.ReversalAsync(receiptNo);
+                var response = await _zvtClient.ReversalAsync(receiptNo, _tokenSource.Token);
                 if (response.State == CommandResponseState.Successful)
                 {
+                    DisableAbortButtonAsync();
+                    
                     this._logger.LogInformation($"{nameof(StartReversalAsync)} - Successful");
 
                     this.UpdateStatus("Reversal successful", StatusType.Information);
@@ -171,13 +176,18 @@ namespace Portalum.Zvt.EasyPay
             try
             {
 
-                var response = await _zvtClient.PaymentAsync(amount);
+                var response = await _zvtClient.PaymentAsync(amount, _tokenSource.Token);
+                this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Aborted");
+                if (_tokenSource.IsCancellationRequested) return;
+                
                 if (response.State == CommandResponseState.Successful)
                 {
+                    DisableAbortButtonAsync();
+                    
                     this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Successful");
 
                     this.UpdateStatus("Payment successful", StatusType.Information);
-                    await Task.Delay(1000);
+                    await Task.Delay(1000000);
 
                     Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
                     return;
@@ -199,14 +209,40 @@ namespace Portalum.Zvt.EasyPay
 
         private void ButtonBase_OnClick(object sender, RoutedEventArgs e)
         {
+            DisableAbortButton();
+            
             Task.Run(async () =>
-            {
-                var abort = _zvtClient?.AbortAsync();
-                if (abort != null)
+            { 
+                _logger.LogInformation($"AbortTransaction - Abort current transaction");
+                if (_zvtClient != null)
                 {
-                    await abort;
+                    var res = await _zvtClient.AbortAsync();
+                    if (res.State == CommandResponseState.Successful)
+                    {
+                        _tokenSource.Cancel();
+                        UpdateStatus("Transaction Aborted", StatusType.Information);
+                        _logger.LogInformation("AbortTransaction - transaction aborted");
+                    }
                 }
+                else
+                {
+                    UpdateStatus("Could not abort transaction. Try manually.", StatusType.Error);
+                    _logger.LogError("AbortTransaction - could not abort transaction");
+                }
+                Thread.Sleep(2000);
+                Application.Current.Dispatcher.Invoke(Application.Current.Shutdown);
             });
         }
+
+        private void DisableAbortButtonAsync()
+        {
+            Application.Current.Dispatcher.Invoke(DisableAbortButton);
+        }
+        private void DisableAbortButton()
+        {
+            ButtonAbortTransaction.IsEnabled = false;
+            ButtonAbortTransaction.Background = Brushes.LightGray;
+        }
+        
     }
 }
