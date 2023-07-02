@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Portalum.Zvt.Models;
+using Serilog.Extensions.Logging;
 
 namespace Portalum.Zvt.EasyPay
 {
@@ -13,64 +15,61 @@ namespace Portalum.Zvt.EasyPay
     /// </summary>
     public partial class MainWindow : Window
     {
-        private readonly ILoggerFactory _loggerFactory;
-        private readonly PaymentTerminalConfig _paymentTerminalConfig;
+        private readonly TransactionConfig _paymentTerminalConfig;
 
         private readonly ILogger<MainWindow> _logger;
+        private readonly ILogger<ZvtClient> _zvtLogger;
+        private readonly ILogger<TcpNetworkDeviceCommunication> _tcpLogger;
         private TcpNetworkDeviceCommunication _deviceCommunication;
         private ZvtClient? _zvtClient;
         private readonly CancellationTokenSource _tokenSource;
 
-        public MainWindow(
-            ILoggerFactory loggerFactory,
-            PaymentTerminalConfig paymentTerminalConfig)
+        public MainWindow(ILogger<MainWindow> logger, ILogger<ZvtClient> zvtLogger, ILogger<TcpNetworkDeviceCommunication> tcpLogger, ConfigurationService configurationService)
         {
-            this._loggerFactory = loggerFactory;
-            this._paymentTerminalConfig = paymentTerminalConfig;
+            _paymentTerminalConfig = configurationService.GetConfiguration();
 
-            this._logger = loggerFactory.CreateLogger<MainWindow>();
+            _logger = logger;
+            _zvtLogger = zvtLogger;
+            _tcpLogger = tcpLogger;
 
-            this.InitializeComponent();
-            this.UpdateStatus("Preparing...", StatusType.Information);
-            this.LabelAmount.Content = $"{paymentTerminalConfig.Amount:C2}";
+            InitializeComponent();
+            UpdateStatus("Preparing...", StatusType.Information);
+            
 
-            switch (paymentTerminalConfig.TransactionType)
+            switch (_paymentTerminalConfig.Funktion)
             {
                 case TransactionType.Payment:
-                    this.LabelTransactionType.Content = "Payment";
-                    this.LabelTransactionDetails.Content = "Amount:";
+                    LabelTransactionType.Content = "Payment";
+                    LabelTransactionDetails.Content = "Amount:";
+                    LabelAmount.Content = $"{_paymentTerminalConfig.Betrag:C2}";
                     break;
-                case TransactionType.Reversal:
-                    this.LabelTransactionType.Content = "Reversal";
-                    this.LabelTransactionDetails.Content = $"Receipt no.: {paymentTerminalConfig.ReceiptNumber}";
-                    break;
-                default:
+                case TransactionType.ReversalLastPayment:
+                    LabelTransactionType.Content = "Reversal";
+                    LabelTransactionDetails.Content = $"Receipt no.: {_paymentTerminalConfig.StornoBelegNr}";
+                    LabelAmount.Content = $"{_paymentTerminalConfig.StornoBetrag:C2}";
                     break;
             }
 
             _tokenSource = new CancellationTokenSource();
 
-            _ = Task.Run(async () => await InitTransaction(paymentTerminalConfig));
+            _ = Task.Run(async () => await InitTransaction(_paymentTerminalConfig));
 
         }
 
-        private async Task InitTransaction(PaymentTerminalConfig paymentTerminalConfig)
+        private async Task InitTransaction(TransactionConfig paymentTerminalConfig)
         {
             var zvtClientConfig = new ZvtClientConfig
             {
                 Encoding = ZvtEncoding.CodePage437,
                 Language = Zvt.Language.German,
-                Password = _paymentTerminalConfig.Password
+                Password = int.Parse(_paymentTerminalConfig.Passwort)
             };
 
-            var deviceCommunicationLogger = this._loggerFactory.CreateLogger<TcpNetworkDeviceCommunication>();
-            var zvtClientLogger = this._loggerFactory.CreateLogger<ZvtClient>();
-
             _deviceCommunication = new TcpNetworkDeviceCommunication(
-                this._paymentTerminalConfig.IpAddress,
+                this._paymentTerminalConfig.IP,
                 port: this._paymentTerminalConfig.Port,
                 enableKeepAlive: false,
-                logger: deviceCommunicationLogger);
+                logger: _tcpLogger);
 
             this.UpdateStatus("Connect to payment terminal...", StatusType.Information);
 
@@ -79,29 +78,67 @@ namespace Portalum.Zvt.EasyPay
                 this.UpdateStatus("Cannot connect to payment terminal", StatusType.Error);
                 await Task.Delay(3000);
 
-                this._logger.LogError($"{nameof(StartPaymentAsync)} - Cannot connect to {this._paymentTerminalConfig.IpAddress}:{this._paymentTerminalConfig.Port}");
+                this._logger.LogError($"{nameof(StartPaymentAsync)} - Cannot connect to {_paymentTerminalConfig.IP}:{_paymentTerminalConfig.Port}");
                 Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-4); });
                 return;
             }
             
-            _zvtClient = new ZvtClient(_deviceCommunication, logger: zvtClientLogger, clientConfig: zvtClientConfig);
+            
+            _zvtClient = new ZvtClient(_deviceCommunication, logger: _zvtLogger, clientConfig: zvtClientConfig);
             _zvtClient.IntermediateStatusInformationReceived += this.IntermediateStatusInformationReceived;
+            _zvtClient.StatusInformationReceived += StatusInformationReceived;
+            _zvtClient.ReceiptReceived += ReceiptReceived;
 
 
-            var task = () => { Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-5)); };
+            var res = await _zvtClient.RegistrationAsync(new RegistrationConfig()
+            {
+                SendIntermediateStatusInformation = true
+            }, _tokenSource.Token);
 
-            switch (paymentTerminalConfig.TransactionType)
+            if (res.State != CommandResponseState.Successful)
+            {
+                Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-5));
+            }
+            
+            _logger.LogInformation($"{nameof(InitTransaction)} - Connection successful");
+            UpdateStatus("Connection successful", StatusType.Information);
+
+            if (paymentTerminalConfig.Betrag == 0)
+            {
+                _logger.LogError("Amount cannot be 0");
+                Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-2));
+            }
+            
+            switch (paymentTerminalConfig.Funktion)
             {
                 case TransactionType.Payment:
-                    task = async () => await this.StartPaymentAsync(paymentTerminalConfig.Amount);
+                    await this.StartPaymentAsync(paymentTerminalConfig.Betrag);
                     break;
-                case TransactionType.Reversal:
-                    task = async () =>
-                        await this.StartReversalAsync(paymentTerminalConfig.ReceiptNumber);
+                case TransactionType.ReversalLastPayment:
+                    await this.StartReversalAsync(paymentTerminalConfig.StornoBelegNr);
+                    break;
+                case TransactionType.Credit:
+                case TransactionType.RepeatReceiptVendor:
+                case TransactionType.RepeatReceiptCustomer:
+                case TransactionType.RepeatReceiptEndOfDay:
+                case TransactionType.TaxFree:
+                case TransactionType.CheckBalanaceAvsCard:
+                case TransactionType.Reservation:
+                case TransactionType.BookReservation:
+                case TransactionType.AbortReservation:
+                case TransactionType.Tip:
+                case TransactionType.SelectLanguage:
+                case TransactionType.ReadCardMagnetic:
+                case TransactionType.ReservationPartialAbort:
+                case TransactionType.ReadCardChip:
+                case TransactionType.Diagnose:
+                case TransactionType.EndOfDay:
+                case TransactionType.RepeatReceipt:
+                default:
+                    Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-5));
                     break;
             }
             
-            _ = Task.Run(task);
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -112,7 +149,7 @@ namespace Portalum.Zvt.EasyPay
                 _zvtClient.Dispose();
             }
 
-            _deviceCommunication.Dispose();
+            _deviceCommunication?.Dispose();
             Application.Current.Shutdown(-5);
         }
 
@@ -187,7 +224,7 @@ namespace Portalum.Zvt.EasyPay
                     this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Successful");
 
                     this.UpdateStatus("Payment successful", StatusType.Information);
-                    await Task.Delay(1000000);
+                    await Task.Delay(1000);
 
                     Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
                     return;
@@ -204,7 +241,17 @@ namespace Portalum.Zvt.EasyPay
 
         private void IntermediateStatusInformationReceived(string status)
         {
-            this.UpdateStatus(status, StatusType.Information);
+            UpdateStatus(status, StatusType.Information);
+        }
+        
+        private void ReceiptReceived(ReceiptInfo obj)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        private void StatusInformationReceived(StatusInformation obj)
+        {
+            throw new System.NotImplementedException();
         }
 
         private void ButtonBase_OnClick(object sender, RoutedEventArgs e)
@@ -220,17 +267,17 @@ namespace Portalum.Zvt.EasyPay
                     if (res.State == CommandResponseState.Successful)
                     {
                         _tokenSource.Cancel();
-                        UpdateStatus("Transaction Aborted", StatusType.Information);
-                        _logger.LogInformation("AbortTransaction - transaction aborted");
                     }
                 }
-                else
-                {
-                    UpdateStatus("Could not abort transaction. Try manually.", StatusType.Error);
-                    _logger.LogError("AbortTransaction - could not abort transaction");
-                }
+                
+                UpdateStatus("Transaction Aborted", StatusType.Information);
+                _logger.LogInformation("AbortTransaction - transaction aborted");
+                
                 Thread.Sleep(2000);
-                Application.Current.Dispatcher.Invoke(Application.Current.Shutdown);
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    Application.Current.Shutdown(-5);
+                });
             });
         }
 

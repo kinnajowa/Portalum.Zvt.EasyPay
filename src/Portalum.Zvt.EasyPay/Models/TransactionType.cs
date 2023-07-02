@@ -6,6 +6,19 @@ public enum TransactionType
     Diagnose = 1,
     EndOfDay = 2,
     ReversalLastPayment = 3,
-    Reversal = 4,
-    RepeatReceipt = 5
+    Credit = 4,
+    RepeatReceipt = 5,
+    RepeatReceiptVendor = 51,
+    RepeatReceiptCustomer = 52,
+    RepeatReceiptEndOfDay = 53,
+    TaxFree = 6,
+    CheckBalanaceAvsCard = 7,
+    Reservation = 8,
+    BookReservation = 9,
+    AbortReservation = 10,
+    Tip = 11,
+    SelectLanguage = 12,
+    ReadCardMagnetic = 13,
+    ReservationPartialAbort = 14,
+    ReadCardChip = 15
 }
