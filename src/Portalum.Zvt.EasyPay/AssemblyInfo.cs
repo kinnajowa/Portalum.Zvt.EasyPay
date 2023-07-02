@@ -1,3 +1,5 @@
+using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 
 [assembly: ThemeInfo(
@@ -7,4 +9,4 @@ using System.Windows;
     ResourceDictionaryLocation.SourceAssembly //where the generic resource dictionary is located
                                               //(used if a resource is not found in the page,
                                               // app, or any theme specific resource dictionaries)
-)]
+), Guid("B220FFF9-1396-4607-8B39-D6AE6CD5A66A")]

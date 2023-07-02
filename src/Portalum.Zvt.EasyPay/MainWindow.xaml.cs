@@ -3,7 +3,6 @@ using Portalum.Zvt.EasyPay.Models;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Threading;
 
 namespace Portalum.Zvt.EasyPay
 {

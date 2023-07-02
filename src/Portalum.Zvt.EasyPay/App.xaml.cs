@@ -5,8 +5,13 @@ using Microsoft.Extensions.Logging;
 using Portalum.Zvt.EasyPay.Models;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Win32;
+using Standard.Licensing;
+using Standard.Licensing.Validation;
 
 namespace Portalum.Zvt.EasyPay
 {
@@ -18,6 +23,9 @@ namespace Portalum.Zvt.EasyPay
         private readonly string _configurationFile = "appsettings.json";
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger _logger;
+        
+        private const string _pkey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEkS3M9UNxjJ9CjGWs80dtqRbQAJBM2y3SRJnFmSnZ4mjGFA4B+9tCwNact4f+V1MBCLHsTaqKJKk5KCKa9fk5AA==";
+
 
         public App()
         {
@@ -41,7 +49,7 @@ namespace Portalum.Zvt.EasyPay
 
             var dataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EasyPay");
             Directory.CreateDirectory(dataPath);
-            var licensePath = Path.Combine(dataPath, "license.xml");
+            var licensePath = Path.Combine(dataPath, "license.lic");
 
             if (File.Exists(licensePath))
             {
@@ -54,17 +62,13 @@ namespace Portalum.Zvt.EasyPay
                 else
                 {
                     this._logger.LogError($"{nameof(Application_Startup)} - License not valid. please refer to your vendor.");
-                    Current.Shutdown(-6);
+                    var window = new LicenseWindow(this._loggerFactory);
+                    window.Show();
                 }
             }
             else
             {
                 var window = new LicenseWindow(this._loggerFactory);
-                window.Closed += (s, args) =>
-                {
-                    //todo
-                    Application_Startup(sender, e);
-                };
                 window.Show();
             }
         }
@@ -173,9 +177,36 @@ namespace Portalum.Zvt.EasyPay
             Current.Shutdown(-2);
         }
 
-        private bool CheckLicense(string license)
+        private bool CheckLicense(string licenseText)
         {
-            return false;
+            var guid = Assembly.GetExecutingAssembly().GetCustomAttribute<GuidAttribute>().Value.ToLower();
+            var license = License.Load(licenseText);
+            var validationFailures = license.Validate()
+                .ExpirationDate()
+                .When(lic => lic.AdditionalAttributes.Contains("AppID"))
+                .And()
+                .Signature(_pkey)
+                .And()
+                .AssertThat(lic => 
+                    lic.AdditionalAttributes.Get("AppID").ToLower().Equals(guid),
+                    new GeneralValidationFailure()
+                    {
+                        Message = "The provided license is not valid for this product.",
+                        HowToResolve = "Please contact your vendor to obtain a valid license for this product."
+                    })
+                .AssertValidLicense();
+
+            var failures = validationFailures.ToList();
+            if (failures.Any())
+            {
+                _logger.LogError($"{nameof(CheckLicense)} - License check failed:");
+                foreach (var f in failures)
+                {
+                    _logger.LogInformation($"{f.Message} | {f.HowToResolve}");
+                }
+                return false;
+            }
+            return true;
         }
     }
 }
