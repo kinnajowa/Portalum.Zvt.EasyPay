@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using Portalum.Zvt.EasyPay.Models;
 
-namespace Portalum.Zvt.EasyPay;
+namespace Portalum.Zvt.EasyPay.Services;
 
 public class ResultService
 {
@@ -48,7 +48,8 @@ public class ResultService
                 break;
         }
     }
-    public void SetResult(TransactionResultType resultType, string errorMessage)
+
+    private void SetResult(TransactionResultType resultType, string errorMessage)
     {
         _output.Ergebnis = (int) resultType * -1;
         _output.ErgebnisText = resultType.ToString();

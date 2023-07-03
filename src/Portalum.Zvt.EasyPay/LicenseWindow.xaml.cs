@@ -4,12 +4,13 @@ using System.Windows.Media;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using Portalum.Zvt.EasyPay.Models;
+using Portalum.Zvt.EasyPay.Services;
 
 namespace Portalum.Zvt.EasyPay;
 
-public partial class LicenseWindow : Window
+public partial class LicenseWindow
 {
-    private ILogger<LicenseWindow> _logger;
+    private readonly ILogger<LicenseWindow> _logger;
     private readonly LicenseService _licenseService;
 
     public LicenseWindow(ILogger<LicenseWindow> logger, LicenseService licenseService)
@@ -50,9 +51,11 @@ public partial class LicenseWindow : Window
 
     private void ButtonFileChooser_OnClick(object sender, RoutedEventArgs e)
     {
-        OpenFileDialog dialog = new OpenFileDialog();
-        dialog.Multiselect = false;
-        dialog.Filter = "License File (*.lic)|*.lic";
+        var dialog = new OpenFileDialog
+        {
+            Multiselect = false,
+            Filter = "License File (*.lic)|*.lic"
+        };
         if (dialog.ShowDialog() ?? false)
         {
             this.TextBoxFilePath.Text = dialog.FileName;

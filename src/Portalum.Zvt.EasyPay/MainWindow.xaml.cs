@@ -4,23 +4,22 @@ using Portalum.Zvt.EasyPay.Models;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Threading;
+using Portalum.Zvt.EasyPay.Services;
 using Portalum.Zvt.Models;
-using Serilog.Extensions.Logging;
 
 namespace Portalum.Zvt.EasyPay
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow
     {
         private readonly TransactionConfig _paymentTerminalConfig;
 
         private readonly ILogger<MainWindow> _logger;
         private readonly ILogger<ZvtClient> _zvtLogger;
         private readonly ILogger<TcpNetworkDeviceCommunication> _tcpLogger;
-        private TcpNetworkDeviceCommunication _deviceCommunication;
+        private TcpNetworkDeviceCommunication? _deviceCommunication;
         private ZvtClient? _zvtClient;
         private readonly CancellationTokenSource _tokenSource;
         private readonly ResultService _resultService;
@@ -96,7 +95,7 @@ namespace Portalum.Zvt.EasyPay
             _zvtClient = new ZvtClient(_deviceCommunication, logger: _zvtLogger, clientConfig: zvtClientConfig);
             _zvtClient.IntermediateStatusInformationReceived += this.IntermediateStatusInformationReceived;
             _zvtClient.StatusInformationReceived += StatusInformationReceived;
-            //_zvtClient.ReceiptReceived += ReceiptReceived;
+            _zvtClient.ReceiptReceived += ReceiptReceived;
 
 
             var res = await _zvtClient.RegistrationAsync(new RegistrationConfig()
@@ -125,7 +124,7 @@ namespace Portalum.Zvt.EasyPay
                 case TransactionType.RepeatReceiptCustomer:
                 case TransactionType.RepeatReceiptEndOfDay:
                 case TransactionType.TaxFree:
-                case TransactionType.CheckBalanaceAvsCard:
+                case TransactionType.CheckBalanceAvsCard:
                 case TransactionType.Reservation:
                 case TransactionType.BookReservation:
                 case TransactionType.AbortReservation:
@@ -180,76 +179,66 @@ namespace Portalum.Zvt.EasyPay
         private async Task StartReversalAsync(int receiptNo)
         {
             this._logger.LogInformation($"{nameof(StartReversalAsync)} - Start");
-            
-            try
+
+            var response = await _zvtClient!.ReversalAsync(receiptNo, _tokenSource.Token);
+            if (_tokenSource.IsCancellationRequested)
             {
-                var response = await _zvtClient.ReversalAsync(receiptNo, _tokenSource.Token);
-                if (_tokenSource.IsCancellationRequested)
-                {
-                    this._logger.LogInformation($"{nameof(StartReversalAsync)} - Aborted");
-                    return;
-                }
-                _resultService.SetResult(response.State, response.ErrorMessage);
-                if (response.State == CommandResponseState.Successful)
-                {
-                    DisableAbortButtonAsync();
+                this._logger.LogInformation($"{nameof(StartReversalAsync)} - Aborted");
+                return;
+            }
+            _resultService.SetResult(response.State, response.ErrorMessage);
+            if (response.State == CommandResponseState.Successful)
+            {
+                DisableAbortButtonAsync();
                     
-                    this._logger.LogInformation($"{nameof(StartReversalAsync)} - Successful");
+                this._logger.LogInformation($"{nameof(StartReversalAsync)} - Successful");
 
-                    this.UpdateStatus("Reversal successful", StatusType.Information);
-                    await Task.Delay(1000);
-                    Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
-                    return;
-                }
-
-                this._logger.LogInformation($"{nameof(StartReversalAsync)} - Not successful");
-
-                this.UpdateStatus("Reversal not successful", StatusType.Error);
+                this.UpdateStatus("Reversal successful", StatusType.Information);
                 await Task.Delay(1000);
+                Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
+                return;
+            }
 
-                Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-1); });
-            }
-            finally
-            {
-            }
+            this._logger.LogInformation($"{nameof(StartReversalAsync)} - Not successful");
+
+            this.UpdateStatus("Reversal not successful", StatusType.Error);
+            await Task.Delay(1000);
+
+            Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-1); });
         }
 
         private async Task StartPaymentAsync(decimal amount)
         {
             this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Start");
 
-            try
+            var response = await _zvtClient!.PaymentAsync(amount, _tokenSource.Token);
+            if (_tokenSource.IsCancellationRequested)
             {
-
-                var response = await _zvtClient.PaymentAsync(amount, _tokenSource.Token);
-                if (_tokenSource.IsCancellationRequested)
-                {
-                    this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Aborted");
-                    return;
-                }
-                _resultService.SetResult(response.State, response.ErrorMessage);
+                this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Aborted");
+                return;
+            }
+            _resultService.SetResult(response.State, response.ErrorMessage);
 
                 
-                if (response.State == CommandResponseState.Successful)
-                {
-                    DisableAbortButtonAsync();
+            if (response.State == CommandResponseState.Successful)
+            {
+                DisableAbortButtonAsync();
                     
-                    this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Successful");
+                this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Successful");
 
-                    this.UpdateStatus("Payment successful", StatusType.Information);
-                    await Task.Delay(1000);
-
-                    Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
-                    return;
-                }
-
-                this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Not successful");
-
-                this.UpdateStatus("Payment not successful", StatusType.Error);
+                this.UpdateStatus("Payment successful", StatusType.Information);
                 await Task.Delay(1000);
 
-                Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-1); });
-            } finally {}
+                Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
+                return;
+            }
+
+            this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Not successful");
+
+            this.UpdateStatus("Payment not successful", StatusType.Error);
+            await Task.Delay(1000);
+
+            Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-1); });
         }
 
         private void IntermediateStatusInformationReceived(string status)

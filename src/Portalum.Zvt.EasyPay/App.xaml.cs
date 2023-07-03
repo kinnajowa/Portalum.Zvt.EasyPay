@@ -1,15 +1,15 @@
 ﻿using Microsoft.Extensions.Logging;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using Portalum.Zvt.EasyPay.Services;
 
 namespace Portalum.Zvt.EasyPay
 {
     /// <summary>
     /// Interaction logic for App.xaml
     /// </summary>
-    public partial class App : Application
+    public partial class App
     {
-        private readonly string _configurationFile = "appsettings.json";
         private readonly ILogger _logger;
         private readonly ServiceProvider _serviceProvider;
         private readonly LicenseService _licenseService;
@@ -22,8 +22,8 @@ namespace Portalum.Zvt.EasyPay
             ConfigureServices(services);
             _serviceProvider = services.BuildServiceProvider();
 
-            _licenseService = _serviceProvider.GetService<LicenseService>();
-            _logger = _serviceProvider.GetService<ILogger<App>>();
+            _licenseService = _serviceProvider.GetService<LicenseService>()!;
+            _logger = _serviceProvider.GetService<ILogger<App>>()!;
             _logger.LogInformation($"{nameof(App)} - Start");
         }
 
@@ -44,7 +44,7 @@ namespace Portalum.Zvt.EasyPay
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
-            _serviceProvider.GetService<ResultService>().SetActive();
+            _serviceProvider.GetService<ResultService>()!.SetActive();
 
             if (_licenseService.LicensePresent())
             {
@@ -52,26 +52,26 @@ namespace Portalum.Zvt.EasyPay
                 {
                     _logger.LogInformation($"Startup successful, start transaction process");
 
-                    var window = _serviceProvider.GetService<MainWindow>();
+                    var window = _serviceProvider.GetService<MainWindow>()!;
                     window.Show();
                 }
                 else
                 {
                     this._logger.LogError($"{nameof(Application_Startup)} - License not valid. please refer to your vendor.");
-                    var window = _serviceProvider.GetService<LicenseWindow>();
+                    var window = _serviceProvider.GetService<LicenseWindow>()!;
                     window.Show();
                 }
             } 
             else
             {
-                var window = _serviceProvider.GetService<LicenseWindow>();
+                var window = _serviceProvider.GetService<LicenseWindow>()!;
                 window.Show();
             }
         }
 
         private void Application_Exit(object sender, ExitEventArgs e)
         {
-            var resultService = _serviceProvider.GetService<ResultService>();
+            var resultService = _serviceProvider.GetService<ResultService>()!;
             resultService.PublishResult();
             resultService.Dispose();
             

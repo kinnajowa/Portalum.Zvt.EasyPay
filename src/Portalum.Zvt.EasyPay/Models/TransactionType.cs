@@ -12,7 +12,7 @@ public enum TransactionType
     RepeatReceiptCustomer = 52,
     RepeatReceiptEndOfDay = 53,
     TaxFree = 6,
-    CheckBalanaceAvsCard = 7,
+    CheckBalanceAvsCard = 7,
     Reservation = 8,
     BookReservation = 9,
     AbortReservation = 10,
