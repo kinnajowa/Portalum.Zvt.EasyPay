@@ -1,18 +1,6 @@
-﻿using System;
-using CommandLine;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-using Portalum.Zvt.EasyPay.Models;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices;
+﻿using Microsoft.Extensions.Logging;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Win32;
-using Standard.Licensing;
-using Standard.Licensing.Validation;
 
 namespace Portalum.Zvt.EasyPay
 {
@@ -24,8 +12,8 @@ namespace Portalum.Zvt.EasyPay
         private readonly string _configurationFile = "appsettings.json";
         private readonly ILogger _logger;
         private readonly ServiceProvider _serviceProvider;
+        private readonly LicenseService _licenseService;
         
-        private const string _pkey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEkS3M9UNxjJ9CjGWs80dtqRbQAJBM2y3SRJnFmSnZ4mjGFA4B+9tCwNact4f+V1MBCLHsTaqKJKk5KCKa9fk5AA==";
 
 
         public App()
@@ -33,7 +21,8 @@ namespace Portalum.Zvt.EasyPay
             ServiceCollection services = new ServiceCollection();
             ConfigureServices(services);
             _serviceProvider = services.BuildServiceProvider();
-            
+
+            _licenseService = _serviceProvider.GetService<LicenseService>();
             _logger = _serviceProvider.GetService<ILogger<App>>();
             _logger.LogInformation($"{nameof(App)} - Start");
         }
@@ -57,21 +46,9 @@ namespace Portalum.Zvt.EasyPay
         {
             _serviceProvider.GetService<ResultService>().SetActive();
 
-            if (!File.Exists(this._configurationFile))
+            if (_licenseService.LicensePresent())
             {
-                this._logger.LogError($"{nameof(Application_Startup)} - Configuration file not available, {this._configurationFile}");
-                Current.Shutdown(-3);
-                return;
-            }
-
-            //check license
-            var dataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EasyPay");
-            Directory.CreateDirectory(dataPath);
-            var licensePath = Path.Combine(dataPath, "license.lic");
-
-            if (File.Exists(licensePath))
-            {
-                if (CheckLicense(File.ReadAllText(licensePath)))
+                if (_licenseService.LicenseValid())
                 {
                     _logger.LogInformation($"Startup successful, start transaction process");
 
@@ -84,7 +61,7 @@ namespace Portalum.Zvt.EasyPay
                     var window = _serviceProvider.GetService<LicenseWindow>();
                     window.Show();
                 }
-            }
+            } 
             else
             {
                 var window = _serviceProvider.GetService<LicenseWindow>();
@@ -95,46 +72,10 @@ namespace Portalum.Zvt.EasyPay
         private void Application_Exit(object sender, ExitEventArgs e)
         {
             var resultService = _serviceProvider.GetService<ResultService>();
-            
-
+            resultService.PublishResult();
             resultService.Dispose();
             
             this._logger.LogInformation($"{nameof(Application_Exit)} - Exit");
         }
-
-
-
-        private bool CheckLicense(string licenseText)
-        {
-            var guid = Assembly.GetExecutingAssembly().GetCustomAttribute<GuidAttribute>().Value.ToLower();
-            var license = License.Load(licenseText);
-            var validationFailures = license.Validate()
-                .ExpirationDate()
-                .When(lic => lic.AdditionalAttributes.Contains("AppID"))
-                .And()
-                .Signature(_pkey)
-                .And()
-                .AssertThat(lic => 
-                    lic.AdditionalAttributes.Get("AppID").ToLower().Equals(guid),
-                    new GeneralValidationFailure()
-                    {
-                        Message = "The provided license is not valid for this product.",
-                        HowToResolve = "Please contact your vendor to obtain a valid license for this product."
-                    })
-                .AssertValidLicense();
-
-            var failures = validationFailures.ToList();
-            if (failures.Any())
-            {
-                _logger.LogError($"{nameof(CheckLicense)} - License check failed:");
-                foreach (var f in failures)
-                {
-                    _logger.LogInformation($"{f.Message} | {f.HowToResolve}");
-                }
-                return false;
-            }
-            return true;
-        }
-        
     }
 }

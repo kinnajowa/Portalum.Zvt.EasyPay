@@ -28,11 +28,37 @@ public class ResultService
         _zvtReg.SetValue("Aktiv", 1);
     }
 
+    public void SetResult(CommandResponseState resultType, string errorMessage)
+    {
+        switch (resultType)
+        {
+            case CommandResponseState.Successful:
+                SetResult(TransactionResultType.Success, errorMessage);
+                break;
+            case CommandResponseState.Abort:
+                SetResult(TransactionResultType.ClosedByUser, errorMessage);
+                break;
+            case CommandResponseState.NotSupported:
+            case CommandResponseState.Unknown:
+            case CommandResponseState.Error:
+                SetResult(TransactionResultType.PaymentNotSuccessful, errorMessage);
+                break;
+            case CommandResponseState.Timeout:
+                SetResult(TransactionResultType.CannotConnect, errorMessage);
+                break;
+        }
+    }
     public void SetResult(TransactionResultType resultType, string errorMessage)
     {
         _output.Ergebnis = (int) resultType * -1;
         _output.ErgebnisText = resultType.ToString();
         _output.ErgebnisLang = errorMessage;
+    }
+
+    public void SetPaymentStatus(int receiptId, decimal amount)
+    {
+        _output.BelegNr = receiptId;
+        _output.Betrag = (int) (amount * 100);
     }
 
     /// <summary>
@@ -43,7 +69,7 @@ public class ResultService
         var propInfos = typeof(OutputModel).GetProperties();
         foreach (var propInfo in propInfos)
         {
-            _zvtReg.SetValue(propInfo.Name, propInfo.GetValue(_output));
+            _zvtReg.SetValue(propInfo.Name, propInfo.GetValue(_output) ?? (propInfo.PropertyType == typeof(string) ? string.Empty : 0));
         }
         
         _zvtReg.SetValue("Aktiv", 0);

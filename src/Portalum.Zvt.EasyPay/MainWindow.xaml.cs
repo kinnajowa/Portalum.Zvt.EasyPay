@@ -23,14 +23,16 @@ namespace Portalum.Zvt.EasyPay
         private TcpNetworkDeviceCommunication _deviceCommunication;
         private ZvtClient? _zvtClient;
         private readonly CancellationTokenSource _tokenSource;
+        private readonly ResultService _resultService;
 
-        public MainWindow(ILogger<MainWindow> logger, ILogger<ZvtClient> zvtLogger, ILogger<TcpNetworkDeviceCommunication> tcpLogger, ConfigurationService configurationService)
+        public MainWindow(ILogger<MainWindow> logger, ILogger<ZvtClient> zvtLogger, ILogger<TcpNetworkDeviceCommunication> tcpLogger, ConfigurationService configurationService, ResultService resultService)
         {
             _paymentTerminalConfig = configurationService.GetConfiguration();
 
             _logger = logger;
             _zvtLogger = zvtLogger;
             _tcpLogger = tcpLogger;
+            _resultService = resultService;
 
             InitializeComponent();
             UpdateStatus("Preparing...", StatusType.Information);
@@ -52,6 +54,13 @@ namespace Portalum.Zvt.EasyPay
 
             _tokenSource = new CancellationTokenSource();
 
+            if (configurationService.GetConfiguration().Betrag == 0)
+            {
+                _logger.LogError("Amount cannot be 0");
+                Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-2));
+                return;
+            }
+            
             _ = Task.Run(async () => await InitTransaction(_paymentTerminalConfig));
 
         }
@@ -78,7 +87,7 @@ namespace Portalum.Zvt.EasyPay
                 this.UpdateStatus("Cannot connect to payment terminal", StatusType.Error);
                 await Task.Delay(3000);
 
-                this._logger.LogError($"{nameof(StartPaymentAsync)} - Cannot connect to {_paymentTerminalConfig.IP}:{_paymentTerminalConfig.Port}");
+                this._logger.LogError($"{nameof(InitTransaction)} - Cannot connect to {_paymentTerminalConfig.IP}:{_paymentTerminalConfig.Port}");
                 Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(-4); });
                 return;
             }
@@ -87,7 +96,7 @@ namespace Portalum.Zvt.EasyPay
             _zvtClient = new ZvtClient(_deviceCommunication, logger: _zvtLogger, clientConfig: zvtClientConfig);
             _zvtClient.IntermediateStatusInformationReceived += this.IntermediateStatusInformationReceived;
             _zvtClient.StatusInformationReceived += StatusInformationReceived;
-            _zvtClient.ReceiptReceived += ReceiptReceived;
+            //_zvtClient.ReceiptReceived += ReceiptReceived;
 
 
             var res = await _zvtClient.RegistrationAsync(new RegistrationConfig()
@@ -103,12 +112,6 @@ namespace Portalum.Zvt.EasyPay
             _logger.LogInformation($"{nameof(InitTransaction)} - Connection successful");
             UpdateStatus("Connection successful", StatusType.Information);
 
-            if (paymentTerminalConfig.Betrag == 0)
-            {
-                _logger.LogError("Amount cannot be 0");
-                Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-2));
-            }
-            
             switch (paymentTerminalConfig.Funktion)
             {
                 case TransactionType.Payment:
@@ -181,6 +184,12 @@ namespace Portalum.Zvt.EasyPay
             try
             {
                 var response = await _zvtClient.ReversalAsync(receiptNo, _tokenSource.Token);
+                if (_tokenSource.IsCancellationRequested)
+                {
+                    this._logger.LogInformation($"{nameof(StartReversalAsync)} - Aborted");
+                    return;
+                }
+                _resultService.SetResult(response.State, response.ErrorMessage);
                 if (response.State == CommandResponseState.Successful)
                 {
                     DisableAbortButtonAsync();
@@ -189,7 +198,6 @@ namespace Portalum.Zvt.EasyPay
 
                     this.UpdateStatus("Reversal successful", StatusType.Information);
                     await Task.Delay(1000);
-
                     Application.Current.Dispatcher.Invoke(() => { Application.Current.Shutdown(0); });
                     return;
                 }
@@ -214,8 +222,13 @@ namespace Portalum.Zvt.EasyPay
             {
 
                 var response = await _zvtClient.PaymentAsync(amount, _tokenSource.Token);
-                this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Aborted");
-                if (_tokenSource.IsCancellationRequested) return;
+                if (_tokenSource.IsCancellationRequested)
+                {
+                    this._logger.LogInformation($"{nameof(StartPaymentAsync)} - Aborted");
+                    return;
+                }
+                _resultService.SetResult(response.State, response.ErrorMessage);
+
                 
                 if (response.State == CommandResponseState.Successful)
                 {
@@ -244,14 +257,14 @@ namespace Portalum.Zvt.EasyPay
             UpdateStatus(status, StatusType.Information);
         }
         
-        private void ReceiptReceived(ReceiptInfo obj)
+        private void ReceiptReceived(ReceiptInfo receipt)
         {
             throw new System.NotImplementedException();
         }
 
-        private void StatusInformationReceived(StatusInformation obj)
+        private void StatusInformationReceived(StatusInformation status)
         {
-            throw new System.NotImplementedException();
+            _resultService.SetPaymentStatus(status.ReceiptNumber, status.Amount);
         }
 
         private void ButtonBase_OnClick(object sender, RoutedEventArgs e)

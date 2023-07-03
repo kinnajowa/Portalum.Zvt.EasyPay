@@ -1,28 +1,52 @@
 ﻿using System;
-using System.IO;
 using System.Windows;
+using System.Windows.Media;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
+using Portalum.Zvt.EasyPay.Models;
 
 namespace Portalum.Zvt.EasyPay;
 
 public partial class LicenseWindow : Window
 {
-    private ILoggerFactory _loggerFactory;
-    private ILogger _logger;
+    private ILogger<LicenseWindow> _logger;
+    private readonly LicenseService _licenseService;
 
-    public LicenseWindow(ILoggerFactory loggerFactory)
+    public LicenseWindow(ILogger<LicenseWindow> logger, LicenseService licenseService)
     {
-        _loggerFactory = loggerFactory;
-        _logger = _loggerFactory.CreateLogger<LicenseWindow>();
+        _licenseService = licenseService;
+        _logger = logger;
         InitializeComponent();
         _logger.LogInformation($"{nameof(LicenseWindow)} - Start License selection");
+        UpdateStatus("Select valid license", StatusType.Information);
     }
     
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
         Application.Current.Shutdown(-5);
     }
+    
+    private void UpdateStatus(string status, StatusType statusType)
+    {
+        this.LabelStatus.Dispatcher.Invoke(() =>
+        {
+            var brushForeground = Brushes.White;
+            var brushBackground = Brushes.Transparent;
+
+            if (statusType == StatusType.Error)
+            {
+                brushForeground = new SolidColorBrush(Color.FromRgb(255, 21, 21));
+                brushBackground = Brushes.White;
+            }
+
+            this.LabelStatus.Foreground = brushForeground;
+            this.LabelStatus.Background = brushBackground;
+
+
+            this.LabelStatus.Content = status;
+        });
+    }
+
 
     private void ButtonFileChooser_OnClick(object sender, RoutedEventArgs e)
     {
@@ -38,18 +62,25 @@ public partial class LicenseWindow : Window
     private void ButtonConfirm_OnClick(object sender, RoutedEventArgs e)
     {
         var xmlFile = TextBoxFilePath.Text;
-        var dataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EasyPay");
-        var licensePath = Path.Combine(dataPath, "license.lic");
+        if (string.IsNullOrEmpty(xmlFile))
+        {
+            UpdateStatus("No file specified", StatusType.Error);
+            return;
+        }
+        
         try
         {
-            File.Copy(xmlFile, licensePath);
+            _licenseService.SubmitLicense(xmlFile);
+            _logger.LogInformation($"{nameof(LicenseWindow)} - License file copied.");
+            if (_licenseService.LicenseValid()) Close();
+            else
+            {
+                UpdateStatus("License not valid", StatusType.Error);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError($"{nameof(LicenseWindow)} - Can't copy license file: {ex.Message}");
-            Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown(-6));
+            UpdateStatus(ex.Message, StatusType.Error);
         }
-        _logger.LogInformation($"{nameof(LicenseWindow)} - License file copied. Restart Application");
-        this.Close();
     }
 }
