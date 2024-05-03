@@ -63,7 +63,7 @@ public class ResultService
     }
 
     /// <summary>
-    /// Publishes transaction results and set active to 0
+    /// Publishes transaction results
     /// </summary>
     public void PublishResult()
     {
@@ -72,8 +72,6 @@ public class ResultService
         {
             _zvtReg.SetValue(propInfo.Name, propInfo.GetValue(_output) ?? (propInfo.PropertyType == typeof(string) ? string.Empty : 0));
         }
-        
-        _zvtReg.SetValue("Aktiv", 0);
     }
 
     public void Dispose()

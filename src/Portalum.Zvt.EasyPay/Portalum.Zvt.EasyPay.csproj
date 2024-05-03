@@ -22,7 +22,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="6.0.0" />
     <PackageReference Include="Portalum.Zvt" Version="2.16.1" />
     <PackageReference Include="Serilog.Extensions.Logging.File" Version="3.0.0" />
-    <PackageReference Include="Standard.Licensing" Version="1.1.5" />
   </ItemGroup>
 
   <ItemGroup>
