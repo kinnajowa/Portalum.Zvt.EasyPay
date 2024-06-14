@@ -36,4 +36,4 @@ jobs:
     - name: Upload binaries to release
       uses: softprops/action-gh-release@v2
       with:
-        files: "./src/Portalum.Zvt.EasyPay/publish/*.zip"
+        files: "./src/Portalum.Zvt.EasyPay/publish/Portalum.Zvt.EasyPay.zip"
