@@ -36,7 +36,7 @@ jobs:
     - name: Upload binaries to release
       uses: svenstaro/upload-release-action@v2
       with:
-        repo_name: Portalum/Portalum.Zvt.EasyPay
+        repo_name: kinnajowa/Portalum.Zvt.EasyPay
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: ./publish/Portalum.Zvt.EasyPay.zip
         tag: ${{ steps.get_version.outputs.tag }}
