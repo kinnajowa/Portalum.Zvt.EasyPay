@@ -24,7 +24,7 @@ jobs:
       run: dotnet build --configuration Release --no-restore /p:NoWarn=1591
     - name: Build project
       run: |
-        dotnet publish ./src/Portalum.Zvt.EasyPay/Portalum.Zvt.EasyPay.csproj --configuration Release --self-contained false --runtime win-x64 -p:PublishReadyToRun=true -p:PublishSingleFile=true --output ./src/Portalum.Zvt.EasyPay/publish/temp
+        dotnet publish ./src/Portalum.Zvt.EasyPay/Portalum.Zvt.EasyPay.csproj --configuration Release --self-contained true --runtime win-x64 -p:PublishReadyToRun=true -p:PublishSingleFile=true --output ./src/Portalum.Zvt.EasyPay/publish/temp
     - uses: vimtor/action-zip@v1
       with:
         files: ./src/Portalum.Zvt.EasyPay/publish/temp
