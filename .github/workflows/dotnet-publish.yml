@@ -24,11 +24,11 @@ jobs:
       run: dotnet build --configuration Release --no-restore /p:NoWarn=1591
     - name: Build project
       run: |
-        dotnet publish ./src/Portalum.Zvt.EasyPay/Portalum.Zvt.EasyPay.csproj --configuration Release --self-contained false --runtime win-x64 -p:PublishReadyToRun=true -p:PublishSingleFile=true --output ./publish/temp
+        dotnet publish ./src/Portalum.Zvt.EasyPay/Portalum.Zvt.EasyPay.csproj --configuration Release --self-contained false --runtime win-x64 -p:PublishReadyToRun=true -p:PublishSingleFile=true --output ./src/Portalum.Zvt.EasyPay/publish/temp
     - uses: vimtor/action-zip@v1
       with:
-        files: ./publish/temp
-        dest: ./publish/Portalum.Zvt.EasyPay.zip
+        files: ./src/Portalum.Zvt.EasyPay/publish/temp
+        dest: ./src/Portalum.Zvt.EasyPay/publish/Portalum.Zvt.EasyPay.zip
     - name: Get the version
       id: get_version
       run: echo ::set-output name=tag::${GITHUB_REF/refs\/tags\//}
@@ -36,6 +36,6 @@ jobs:
     - name: Upload binaries to release
       uses: AButler/upload-release-assets@v3.0
       with:
-        files: "./publish/*.zip"
+        files: "./src/Portalum.Zvt.EasyPay/publish/*.zip"
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         release-tag: ${{ github.ref_name }}
