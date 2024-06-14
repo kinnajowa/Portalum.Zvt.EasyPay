@@ -34,8 +34,6 @@ jobs:
       run: echo ::set-output name=tag::${GITHUB_REF/refs\/tags\//}
       shell: bash
     - name: Upload binaries to release
-      uses: AButler/upload-release-assets@v3.0
+      uses: softprops/action-gh-release@v2
       with:
         files: "./src/Portalum.Zvt.EasyPay/publish/*.zip"
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        release-tag: ${{ github.ref_name }}
